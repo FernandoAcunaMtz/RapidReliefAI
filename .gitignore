@@ -1,0 +1,33 @@
+# Modelos pesados (se guardan en Google Drive)
+models/*.h5
+models/*.keras
+models/*.tflite
+models/checkpoints/
+models/final/
+
+# Datasets (se guardan en Google Drive)
+data/
+datasets/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv/
+venv/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# Flutter/Dart
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/build/
+app/.packages
+
+# OS
+.DS_Store
+Thumbs.db
