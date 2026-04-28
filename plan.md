@@ -1,7 +1,7 @@
 # RapidRelief AI — Plan de Desarrollo
 **Clasificación Automatizada de Donaciones Textiles con CNN + Transfer Learning**
 
-> Proyecto: Fernando Acuña Martínez, Pamela Ruíz Velasco Calvo, Dijo Lozada Vivar
+> Proyecto: Fernando Acuña Martínez, Pamela Ruíz Velasco Calvo, Said Lozada Vivar
 > Docente: Dr. José Ambrosio Bastián | IA y Sistemas Expertos | Marzo–Mayo 2026
 
 ---
@@ -60,67 +60,59 @@ De todos los modelos en [keras.io/api/applications](https://keras.io/api/applica
 
 ---
 
-## 3. Estrategia de Datos (Dual Dataset)
+## 3. Estrategia de Datos
 
-### Datasets a combinar
+### Dataset único: Clothing Dataset Small
 
 | Dataset | Imágenes | Clases | Tipo | Resolución |
 |---------|----------|--------|------|------------|
-| [Fashion-MNIST](https://www.kaggle.com/datasets/zalando-research/fashionmnist) | 70,000 | 10 | Grayscale 28×28 | Baja |
-| [Clothing Dataset Small](https://www.kaggle.com/datasets/abdelrahmansoltan98/clothing-dataset-small) | ~5,000 | ~10 | RGB, fotos reales | Alta |
+| [Clothing Dataset Small](https://www.kaggle.com/datasets/abdelrahmansoltan98/clothing-dataset-small) | ~3,800 | 10 | RGB, fotos reales | Variable |
 
-### Mapeo de clases unificado
+**Decisión sobre Fashion-MNIST:** Originalmente el plan combinaba Clothing Dataset Small con Fashion-MNIST (70,000 imágenes grayscale 28×28). Tras experimentar con la combinación se observó que la conversión grayscale → RGB de FMNIST introducía un desfase de dominio que degradaba la precisión sobre fotos reales. **Se descartó FMNIST** y se enfocó el entrenamiento exclusivamente en Clothing Dataset Small con augmentación robusta. La compensación se logra con `class_weight='balanced'` + augmentación aumentada (rotación, brillo, shifts).
 
-```
-Clase Final         Fashion-MNIST           Clothing Dataset Small
-─────────────────────────────────────────────────────────────────
-0  T-shirt          T-shirt/top (0)         T-Shirt
-1  Pantalón         Trouser (1)             Pants
-2  Suéter           Pullover (2)            Longsleeve
-3  Vestido          Dress (3)               Dress
-4  Abrigo           Coat (4)                Outwear
-5  Sandalia         Sandal (5)              Shoes (parcial)
-6  Camisa           Shirt (6)               Shirt
-7  Tenis            Sneaker (7)             Shoes (parcial)
-8  Bolsa            Bag (8)                 — (solo FMNIST)
-9  Bota             Ankle boot (9)          — (solo FMNIST)
-```
+### Distribución de clases (Clothing Small)
 
-> Clases 8 y 9 se nutren principalmente de Fashion-MNIST; el modelo aprende la textura/forma base de esas clases desde imágenes sintéticas y se generaliza con augmentation.
+| Split | Imágenes |
+|-------|----------|
+| Train | 3,068 |
+| Validation | 341 |
+| Test | 372 |
+| **Total** | **3,781** |
+
+Clases (orden alfabético, asignación de `flow_from_directory`):
+`0=dress, 1=hat, 2=longsleeve, 3=outwear, 4=pants, 5=shirt, 6=shoes, 7=shorts, 8=skirt, 9=t-shirt`
 
 ### Pipeline de preprocesamiento
 
 ```
-Fashion-MNIST (grayscale 28×28)          Clothing DS (RGB variable)
-        │                                         │
-  Cargar con tf.keras.datasets            Cargar con ImageDataGenerator
-        │                                         │
-  Grayscale → RGB (stack canal ×3)        Resize → 224×224
-        │                                         │
-  Resize 28×28 → 224×224 (bicubic)        preprocess_input MobileNetV2
-        │                                         │
-  preprocess_input MobileNetV2            Augmentation (flip, rot, zoom)
-        │                                         │
-        └─────────────┬───────────────────────────┘
-                      │
-              Dataset combinado
-              División: 85% train / 15% test
-              (split estratificado por clase)
+Clothing Dataset Small (RGB variable)
+    ↓
+ImageDataGenerator + flow_from_directory
+    ↓
+Resize → 224×224
+    ↓
+preprocess_input MobileNetV2 (escala a [-1, 1])
+    ↓
+Augmentation (train) → batches (32, 224, 224, 3) + labels OHE (32, 10)
 ```
 
 ### Augmentation strategy
 
-Basado en `context/referent.md` (Xception sobre Clothing Small): augmentation minimalista supera al agresivo en este dataset. Augmentation excesivo introduce ruido sin mejora de generalización.
-
 ```python
 train_datagen = ImageDataGenerator(
     preprocessing_function=preprocess_input,
-    shear_range=10.0,       # validado en referent: mejor que rotation_range
-    zoom_range=0.1,         # conservador, evita distorsión de prendas
-    horizontal_flip=True,   # única transformación geométrica fuerte
+    rotation_range=15,
+    width_shift_range=0.10,
+    height_shift_range=0.10,
+    shear_range=10.0,
+    zoom_range=0.15,
+    horizontal_flip=True,
+    brightness_range=[0.85, 1.15],
+    fill_mode='nearest'
 )
-# NO usar: rotation_range alto, brightness_range, width/height_shift — degradan accuracy en este dominio
 ```
+
+Aumentos adicionales (rotación, brillo, shifts) añadidos en v2 para compensar la falta de FMNIST y reducir el sobreajuste observado en v1.
 
 ---
 
@@ -128,47 +120,61 @@ train_datagen = ImageDataGenerator(
 
 ### Fase A — Feature Extraction (base congelada)
 
-Arquitectura validada en `context/referent.md` y adaptada a MobileNetV2:
+Arquitectura implementada en `notebooks/02_transfer_learning.ipynb`:
 
 ```python
 base = MobileNetV2(input_shape=(224, 224, 3), include_top=False, weights='imagenet')
 base.trainable = False
 
-inputs = keras.Input(shape=(224, 224, 3))
-x = base(inputs, training=False)      # training=False mantiene BatchNorm congelado
-x = GlobalAveragePooling2D()(x)       # mejor que Flatten: reduce parámetros y overfitting
-x = Dense(100, activation='relu')(x)  # referent validó Dense(100) como óptimo, no 512
-x = Dropout(0.2)(x)                   # referent: dropout=0.2 superó 0.0, 0.5 en val_accuracy
-outputs = Dense(10)(x)                # SIN softmax — usar from_logits=True en la loss
+x = GlobalAveragePooling2D()(base.output)   # 7×7×1280 → 1280 (vs Flatten=62,720)
+x = Dense(512, activation='relu')(x)
+x = Dropout(0.3)(x)                         # regularización
+output = Dense(10, activation='softmax')(x) # 10 clases
 
-model = Model(inputs=inputs, outputs=outputs)
+model = Model(inputs=base.input, outputs=output)
 model.compile(
     optimizer=Adam(1e-3),
-    loss=CategoricalCrossentropy(from_logits=True),   # más estable numéricamente
+    loss='categorical_crossentropy',
     metrics=['accuracy']
 )
 ```
 
-### Fase B — Fine-Tuning (descongelar últimas capas)
+**Justificación de cambios respecto a v1:**
+- `GlobalAveragePooling2D` en lugar de `Flatten`: reduce 128M → 655K parámetros en la cabeza
+- `Dense(16, sigmoid)` eliminada: `sigmoid` es para multi-etiqueta, no multi-clase
+- `Dropout(0.3)` añadido: combate el overfitting observado en v1 (gap train-val ~10%)
+- `Adam` en lugar de `SGD`: convergencia más rápida y estable para transfer learning
+
+### Fase B — Fine-Tuning (descongelar últimas 54 capas)
 
 ```python
-# Descongelar desde la capa 100 en adelante (últimos ~54 de 154 layers)
 base.trainable = True
-for layer in base.layers[:100]:
+for layer in base.layers[:-54]:
     layer.trainable = False
 
 model.compile(optimizer=Adam(1e-5), loss='categorical_crossentropy', metrics=['accuracy'])
 ```
 
-### Callbacks obligatorios
+LR 100× menor (1e-5) para refinar las representaciones sin destruir los pesos preentrenados de ImageNet.
+
+### Callbacks
 
 ```python
 callbacks = [
-    EarlyStopping(patience=5, restore_best_weights=True, monitor='val_accuracy'),
-    ReduceLROnPlateau(factor=0.5, patience=3, monitor='val_loss'),
-    ModelCheckpoint('best_model.keras', save_best_only=True, monitor='val_accuracy'),
-    TensorBoard(log_dir='./logs')
+    ModelCheckpoint(checkpoint_path, save_best_only=True, monitor='val_accuracy'),
+    EarlyStopping(patience=6, restore_best_weights=True, monitor='val_accuracy'),
+    ReduceLROnPlateau(factor=0.5, patience=3, monitor='val_loss', min_lr=1e-6),
 ]
+```
+
+### Compensación del desbalance de clases
+
+El test set tiene 73 zapatos vs. 12 faldas. Se aplica `class_weight='balanced'` en `model.fit()` para compensar:
+
+```python
+from sklearn.utils.class_weight import compute_class_weight
+class_weights = compute_class_weight('balanced', classes=np.arange(10), y=train_data.classes)
+model.fit(..., class_weight=dict(enumerate(class_weights)))
 ```
 
 ---
@@ -425,7 +431,7 @@ dependencies:
 main branch
 ├── fernando/sprint-1-eda          ← Fernando: notebooks de datos
 ├── pamela/sprint-2-training       ← Pamela: entrenamiento y métricas
-└── dijo/sprint-5-app              ← Dijo: app Flutter
+└── said/sprint-5-app              ← Said: app Flutter
 ```
 
 - **Daily sync:** Comentarios en celdas de notebooks con fecha y autor

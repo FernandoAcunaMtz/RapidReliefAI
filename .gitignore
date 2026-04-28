@@ -1,13 +1,17 @@
-# Modelos pesados (se guardan en Google Drive)
-models/*.h5
-models/*.keras
-models/*.tflite
-models/checkpoints/
-models/final/
+# Modelos pesados (se guardan en Google Drive — ver model/INSTRUCCIONES.md)
+model/*.h5
+model/*.keras
+model/*.tflite
+model/checkpoints/
+models/
+*.h5
+*.keras
+*.tflite
 
 # Datasets (se guardan en Google Drive)
 data/
 datasets/
+Datasets/
 
 # Python
 __pycache__/
@@ -21,7 +25,10 @@ venv/
 .ipynb_checkpoints/
 */.ipynb_checkpoints/
 
-# Flutter/Dart
+# Streamlit
+.streamlit/secrets.toml
+
+# Flutter/Dart (deploy futuro)
 app/.dart_tool/
 app/.flutter-plugins
 app/.flutter-plugins-dependencies
@@ -31,3 +38,4 @@ app/.packages
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini

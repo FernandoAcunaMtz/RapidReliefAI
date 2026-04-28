@@ -5,7 +5,7 @@ Computadora (CNN)
 Docente: Dr. José Ambrosio Bastián
 Inteligencia Artificial y Sistemas Expertos
 Alumnos: Fernando Acuña Martínez, Pamela Ruíz Velasco Calvo,
-Dijo Lozada Vivar
+Said Lozada Vivar
 Marzo 2026
 Introducción y Propósito
 En situaciones de desastre natural o crisis de refugiados, la gestión de donaciones textiles

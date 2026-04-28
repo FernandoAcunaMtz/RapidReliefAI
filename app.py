@@ -1025,12 +1025,15 @@ lento, agotador y propenso a errores — limitando la velocidad de distribución
 
         st.markdown('<div class="section-label">Datos de Entrenamiento</div>', unsafe_allow_html=True)
         st.markdown("""
-| Dataset | Imágenes | Tipo |
-|---------|----------|------|
-| Clothing Dataset Small | ~5 000 | Fotografías reales en color |
-| Fashion-MNIST (Zalando) | 70 000 | Escala de grises 28×28 |
+| Split | Imágenes | Uso |
+|-------|----------|-----|
+| Train | 3 068 | Entrenamiento con augmentación |
+| Validation | 341 | Validación durante entrenamiento |
+| Test | 372 | Evaluación final + matriz de confusión |
 
-División: **85% entrenamiento / 15% prueba** · Sin datos biométricos.
+**Fuente:** Clothing Dataset Small (Kaggle) — fotografías reales en color.
+**Compensación de desbalance:** `class_weight='balanced'` por clase.
+**Privacidad:** Sin datos biométricos ni rostros.
 """)
 
     with col_r:
@@ -1077,21 +1080,22 @@ with tab_tech:
 **Base:** MobileNetV2 pre-entrenado en ImageNet
 3.5 M parámetros · 14 MB (.h5) → ~4 MB (.tflite INT8)
 
-**Head personalizado:**
+**Head personalizado (v2):**
 ```
 Input (224 × 224 × 3)
 └── MobileNetV2  [congelada en Fase A]
-    └── GlobalAveragePooling2D
-        └── Dense(2048, relu)
-            └── Dense(512, relu)
-                └── Dense(16, sigmoid)
-                    └── Dense(10, softmax)
+    └── GlobalAveragePooling2D     [7×7×1280 → 1280]
+        └── Dense(512, relu)
+            └── Dropout(0.3)
+                └── Dense(10, softmax)
 ```
 
-| Fase | Descripción | Épocas | LR |
-|------|-------------|--------|----|
-| A | Feature extraction · base congelada | 10 | 1e-3 |
-| B | Fine-tuning · últimas 54 capas | 10–15 | 1e-5 |
+| Fase | Descripción | Épocas | LR | Optimizador |
+|------|-------------|--------|----|-------------|
+| A | Feature extraction · base congelada | hasta 25 | 1e-3 | Adam |
+| B | Fine-tuning · últimas 54 capas | hasta 20 | 1e-5 | Adam |
+
+**Callbacks:** EarlyStopping (patience=6), ReduceLROnPlateau, ModelCheckpoint.
 """)
 
         st.markdown('<div class="section-label">Pipeline de Datos</div>', unsafe_allow_html=True)
@@ -1099,13 +1103,18 @@ Input (224 × 224 × 3)
 ```python
 ImageDataGenerator(
     preprocessing_function=preprocess_input,
+    rotation_range=15,
+    width_shift_range=0.10,
+    height_shift_range=0.10,
     shear_range=10.0,
-    zoom_range=0.1,
+    zoom_range=0.15,
     horizontal_flip=True,
+    brightness_range=[0.85, 1.15],
 )
 # Entrada: 224×224 · rango [-1, 1]
 ```
-Fashion-MNIST: grayscale 28×28 → RGB stack ×3 → resize 224×224
+Augmentación robusta para compensar el tamaño moderado del dataset
+(~3 068 imágenes de entrenamiento).
 """)
 
     with col_r:
