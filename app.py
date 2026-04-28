@@ -21,7 +21,7 @@ st.set_page_config(
         "About": (
             "RapidRelief AI\n"
             "Clasificación automatizada de donaciones textiles para respuesta humanitaria.\n\n"
-            "Equipo: Fernando Acuña · Pamela Ruíz · Dijo Lozada\n"
+            "Equipo: Fernando Acuña · Pamela Ruíz · Said Lozada\n"
             "Instructor: Dr. José Ambrosio Bastián · USB 2026"
         )
     },
@@ -223,6 +223,47 @@ st.markdown("""
 [data-testid="stFileUploader"] section {
     background: transparent !important;
     border: none !important;
+}
+
+/* ── Camera input ────────────────────────────────────── */
+[data-testid="stCameraInput"] {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px dashed rgba(99,160,255,0.3) !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+}
+[data-testid="stCameraInput"] * { color: rgba(255,255,255,0.70) !important; }
+[data-testid="stCameraInput"] video {
+    border-radius: 10px !important;
+}
+[data-testid="stCameraInputButton"] button {
+    background: linear-gradient(135deg, #1D4ED8, #2563EB) !important;
+    border: 1px solid rgba(99,160,255,0.4) !important;
+    color: white !important;
+    font-weight: 600 !important;
+    border-radius: 8px !important;
+}
+
+/* ── Input mode radio ────────────────────────────────── */
+[data-testid="stRadio"] > div {
+    display: flex !important;
+    gap: 0.5rem !important;
+    flex-direction: row !important;
+}
+[data-testid="stRadio"] label {
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid rgba(255,255,255,0.10) !important;
+    border-radius: 8px !important;
+    padding: 0.35rem 0.9rem !important;
+    cursor: pointer !important;
+    transition: all 0.15s !important;
+    color: rgba(255,255,255,0.60) !important;
+    font-size: 0.88rem !important;
+}
+[data-testid="stRadio"] label:has(input:checked) {
+    background: rgba(59,130,246,0.18) !important;
+    border-color: rgba(59,130,246,0.40) !important;
+    color: #93C5FD !important;
 }
 
 /* ── Expander ────────────────────────────────────────── */
@@ -804,7 +845,7 @@ with st.sidebar:
     st.divider()
     st.markdown(
         "<div style='font-size:0.78rem;color:rgba(255,255,255,0.35);line-height:1.7;'>"
-        "Fernando Acuña · Pamela Ruíz<br>Dijo Lozada<br>"
+        "Fernando Acuña · Pamela Ruíz<br>Said Lozada<br>"
         "<span style='color:rgba(255,255,255,0.22);'>Dr. José A. Bastián · USB 2026</span>"
         "</div>",
         unsafe_allow_html=True
@@ -838,22 +879,49 @@ with tab_cls:
 
     with col_up:
         st.markdown('<div class="section-label">Entrada</div>', unsafe_allow_html=True)
-        uploaded = st.file_uploader(
-            "Arrastra o selecciona una imagen de prenda",
-            type=["jpg", "jpeg", "png", "webp"],
-            help="Formatos: JPG · PNG · WEBP · Máx. 10 MB",
+
+        input_mode = st.radio(
+            "Fuente de imagen",
+            ["◈  Subir archivo", "◉  Cámara"],
+            horizontal=True,
+            label_visibility="collapsed",
         )
 
-        if uploaded:
-            img = Image.open(uploaded)
-            st.image(img, caption=uploaded.name, use_container_width=True)
+        img = None
+        source_name = None
+
+        if input_mode == "◈  Subir archivo":
+            uploaded = st.file_uploader(
+                "Arrastra o selecciona una imagen de prenda",
+                type=["jpg", "jpeg", "png", "webp"],
+                help="Formatos: JPG · PNG · WEBP · Máx. 10 MB",
+            )
+            if uploaded:
+                img = Image.open(uploaded)
+                source_name = uploaded.name
+        else:
+            captured = st.camera_input(
+                "Apunta la cámara a la prenda y toma la foto",
+                help="Se usa la cámara del dispositivo — ninguna imagen se almacena en el servidor.",
+            )
+            if captured:
+                img = Image.open(captured)
+                source_name = "foto · cámara"
+
+        if img is not None:
+            st.image(img, caption=source_name, use_container_width=True)
             do_classify = st.button("◈ &nbsp;Clasificar imagen", type="primary", use_container_width=True)
         else:
-            st.markdown("""
+            placeholder_text = (
+                "Sube una imagen para clasificar"
+                if input_mode == "◈  Subir archivo"
+                else "Toma una foto de la prenda"
+            )
+            st.markdown(f"""
 <div class="upload-placeholder">
   <div class="icon">◈</div>
   <div style="font-size:0.95rem;font-weight:500;color:rgba(255,255,255,0.45);">
-    Sube una imagen para clasificar
+    {placeholder_text}
   </div>
   <div style="font-size:0.78rem;margin-top:0.3rem;color:rgba(255,255,255,0.22);">
     JPG · PNG · WEBP · Máx. 10 MB
@@ -865,7 +933,7 @@ with tab_cls:
     with col_res:
         st.markdown('<div class="section-label">Resultado</div>', unsafe_allow_html=True)
 
-        if uploaded and do_classify:
+        if img is not None and do_classify:
             with st.spinner("Analizando…"):
                 if model is not None:
                     probs, elapsed = predict_real(model, img)
@@ -908,7 +976,7 @@ with tab_cls:
                     icon="◎"
                 )
 
-        elif not uploaded:
+        elif img is None:
             st.markdown("""
 <div style="padding:3.5rem 1rem;text-align:center;color:rgba(255,255,255,0.20);">
   <div style="font-size:2.5rem;font-weight:300;letter-spacing:4px;">◈</div>
@@ -988,7 +1056,7 @@ División: **85% entrenamiento / 15% prueba** · Sin datos biométricos.
   <div style="color:rgba(255,255,255,0.85);font-weight:600;font-size:0.9rem;">
     Fernando Acuña Martínez<br>
     Pamela Ruíz Velasco Calvo<br>
-    Dijo Lozada Vivar
+    Said Lozada Vivar
   </div>
   <div style="color:rgba(255,255,255,0.35);font-size:0.78rem;margin-top:0.5rem;">
     Dr. José Ambrosio Bastián · USB 2026
