@@ -4,6 +4,7 @@ Streamlit app para demostración y validación del modelo en entorno de desarrol
 """
 
 import os
+import base64
 import time
 import numpy as np
 import streamlit as st
@@ -850,6 +851,20 @@ with st.sidebar:
         unsafe_allow_html=True
     )
 
+
+# ─── Hero background ──────────────────────────────────────────────────────────
+_hero_img = Path("context/rapidreliefherowebp.webp")
+if _hero_img.exists():
+    _b64 = base64.b64encode(_hero_img.read_bytes()).decode()
+    st.markdown(f"""
+<style>
+.hero {{
+    background:
+        linear-gradient(rgba(7,29,82,0.30), rgba(7,29,82,0.30)),
+        url("data:image/webp;base64,{_b64}") center/cover no-repeat !important;
+}}
+</style>
+""", unsafe_allow_html=True)
 
 # ─── Hero ─────────────────────────────────────────────────────────────────────
 demo_badge = (
