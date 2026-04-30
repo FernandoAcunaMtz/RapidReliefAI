@@ -42,7 +42,7 @@ CLASES = [
 ]
 
 IMAGE_SIZE = (224, 224)
-MODEL_PATH = Path(os.environ.get("MODEL_PATH", "model/clothing_classifier.h5"))
+MODEL_PATH = Path(os.environ.get("MODEL_PATH", "model/rapidrelief_efficientnetb0_v5.keras"))
 
 # ─── Iconos SVG monocromáticos (stroke-based, 24×24) ─────────────────────────
 def _svg(inner: str) -> str:
@@ -699,8 +699,10 @@ def load_model():
 # ─── Preprocesamiento ─────────────────────────────────────────────────────────
 def preprocess(img: Image.Image) -> np.ndarray:
     img = img.convert("RGB").resize(IMAGE_SIZE, Image.BICUBIC)
-    x = np.array(img, dtype=np.float32)
-    x = (x / 127.5) - 1.0
+    x = np.array(img, dtype=np.float32) / 255.0
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    std  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    x = (x - mean) / std
     return np.expand_dims(x, 0)
 
 
@@ -793,7 +795,7 @@ with st.sidebar:
         with st.expander("¿Cómo cargar el modelo?"):
             st.markdown(f"""
 1. Entrena en `02_transfer_learning.ipynb`
-2. Descarga el `.h5` desde Colab
+2. Descarga `rapidrelief_efficientnetb0_v5.keras` desde Drive
 3. Colócalo en:
 ```
 {MODEL_PATH}
@@ -1017,7 +1019,7 @@ lento, agotador y propenso a errores — limitando la velocidad de distribución
         st.markdown("""
 **RapidRelief AI** automatiza la clasificación con visión por computadora:
 
-- Fotografía la prenda → MobileNetV2 la clasifica en **< 300 ms**
+- Fotografía la prenda → EfficientNetB0 la clasifica en **< 300 ms**
 - Guía la distribución hacia quienes más lo necesitan
 - Funciona **100% offline** — sin internet en campo
 - Reduce el tiempo de clasificación manual en **70%**
@@ -1077,41 +1079,41 @@ with tab_tech:
     with col_l:
         st.markdown('<div class="section-label">Arquitectura</div>', unsafe_allow_html=True)
         st.markdown("""
-**Base:** MobileNetV2 pre-entrenado en ImageNet
-3.5 M parámetros · 14 MB (.h5) → ~4 MB (.tflite INT8)
+**Base:** EfficientNetB0 pre-entrenado en ImageNet
+4 M parámetros · ~20 MB (.keras) → ~5 MB (.tflite INT8)
 
-**Head personalizado (v2):**
+**Head personalizado (v5.2):**
 ```
 Input (224 × 224 × 3)
-└── MobileNetV2  [congelada en Fase A]
+└── EfficientNetB0  [congelada en Fase A]
     └── GlobalAveragePooling2D     [7×7×1280 → 1280]
         └── Dense(512, relu)
-            └── Dropout(0.3)
+            └── Dropout(0.4)
                 └── Dense(10, softmax)
 ```
 
-| Fase | Descripción | Épocas | LR | Optimizador |
-|------|-------------|--------|----|-------------|
-| A | Feature extraction · base congelada | hasta 25 | 1e-3 | Adam |
-| B | Fine-tuning · últimas 54 capas | hasta 20 | 1e-5 | Adam |
+| Fase | Descripción | Val acc | Optimizador |
+|------|-------------|---------|-------------|
+| A | Feature extraction · base congelada | **0.9062 ✓** | Adam lr=1e-3 |
 
-**Callbacks:** EarlyStopping (patience=6), ReduceLROnPlateau, ModelCheckpoint.
+**Callbacks:** EarlyStopping (patience=10), ReduceLROnPlateau, ModelCheckpoint.
 """)
 
         st.markdown('<div class="section-label">Pipeline de Datos</div>', unsafe_allow_html=True)
         st.markdown("""
 ```python
 ImageDataGenerator(
-    preprocessing_function=preprocess_input,
-    rotation_range=15,
-    width_shift_range=0.10,
-    height_shift_range=0.10,
-    shear_range=10.0,
-    zoom_range=0.15,
+    preprocessing_function=preprocess_input,  # EfficientNetB0
+    rotation_range=20,
+    width_shift_range=0.15,
+    height_shift_range=0.15,
+    shear_range=15.0,
+    zoom_range=0.20,
     horizontal_flip=True,
-    brightness_range=[0.85, 1.15],
+    brightness_range=[0.80, 1.20],
+    fill_mode='reflect'
 )
-# Entrada: 224×224 · rango [-1, 1]
+# Entrada: 224×224 · normalización ImageNet (torch)
 ```
 Augmentación robusta para compensar el tamaño moderado del dataset
 (~3 068 imágenes de entrenamiento).
@@ -1168,6 +1170,6 @@ st.markdown("""
 <div class="app-footer">
   <strong>◈ RapidRelief AI</strong> &nbsp;·&nbsp;
   Clasificación automatizada de donaciones textiles &nbsp;·&nbsp; USB 2026<br>
-  MobileNetV2 · Transfer Learning · TensorFlow 2.21 · Streamlit 1.56
+  EfficientNetB0 · Transfer Learning · TensorFlow 2.x · Streamlit
 </div>
 """, unsafe_allow_html=True)
