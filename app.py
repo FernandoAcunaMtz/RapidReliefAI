@@ -860,8 +860,14 @@ if _hero_img.exists():
 <style>
 .hero {{
     background:
-        linear-gradient(rgba(7,29,82,0.30), rgba(7,29,82,0.30)),
+        linear-gradient(rgba(5,15,50,0.62), rgba(5,15,50,0.62)),
         url("data:image/webp;base64,{_b64}") center/cover no-repeat !important;
+}}
+.hero h1 {{
+    text-shadow: 0 2px 18px rgba(0,0,0,0.75), 0 1px 4px rgba(0,0,0,0.9) !important;
+}}
+.hero p, .hero-eyebrow {{
+    text-shadow: 0 1px 8px rgba(0,0,0,0.80) !important;
 }}
 </style>
 """, unsafe_allow_html=True)
