@@ -689,9 +689,8 @@ def load_model():
     if not MODEL_PATH.exists():
         return None
     try:
-        os.environ["TF_USE_LEGACY_KERAS"] = "1"
-        import tensorflow as tf
-        return tf.keras.models.load_model(str(MODEL_PATH))
+        import tf_keras
+        return tf_keras.models.load_model(str(MODEL_PATH))
     except Exception as exc:
         st.warning(f"Error al cargar el modelo: {exc}")
         return None
