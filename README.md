@@ -16,13 +16,14 @@ RapidRelief AI automatiza la clasificación de prendas donadas en centros de aco
 
 **Indicadores de éxito:**
 
-| KPI | Meta | Estado actual |
-|-----|------|--------------|
-| Val accuracy | ≥ 90% | 88.27% (v1) → objetivo con v2 + fine-tuning |
-| F1-score por clase | ≥ 0.88 | 0.86 macro avg (v1) |
-| Tamaño TFLite INT8 | ≤ 6 MB | Pendiente cuantización en v2 |
-| Latencia inferencia | ≤ 300 ms | ✓ |
-| Funcionalidad offline | 100% | ✓ (TFLite embebido en Flutter) |
+| KPI | Meta | Estado |
+|-----|------|--------|
+| Val accuracy | ≥ 90% | **0.9062 ✓** (v5.2) |
+| Test accuracy | ≥ 90% | **0.9059 ✓** (con TTA) |
+| F1-score macro | ≥ 0.88 | **0.90 ✓** |
+| Tamaño TFLite INT8 | ≤ 6 MB | **5.3 MB ✓** |
+| Latencia inferencia | ≤ 300 ms | **✓** |
+| Funcionalidad offline | 100% | **✓** (TFLite embebido en Flutter) |
 
 ---
 
@@ -30,9 +31,9 @@ RapidRelief AI automatiza la clasificación de prendas donadas en centros de aco
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  Google Colab (GPU T4)                              │
+│  Google Colab (GPU T4)                               │
 │  ├── Notebooks: 00 setup → 01 EDA → 02 entrenamiento │
-│  └── Drive: datasets + modelos guardados            │
+│  └── Drive: datasets + modelos guardados             │
 └──────────────────────┬───────────────────────────────┘
                        │ exporta .keras + .tflite (INT8)
          ┌─────────────┼─────────────┐
@@ -53,49 +54,60 @@ RapidRelief AI automatiza la clasificación de prendas donadas en centros de aco
 
 ## 3. Modelo — Justificación técnica
 
-### Por qué MobileNetV2
+### Por qué EfficientNetB0
 
-De todos los modelos en [keras.io/api/applications](https://keras.io/api/applications/), **MobileNetV2** es el más adecuado:
+Después de evaluar múltiples arquitecturas y experimentar con MobileNetV2 (v2–v4), se adoptó **EfficientNetB0** como backbone final por romper el plateau de 0.8886 que MobileNetV2 no pudo superar en 4 versiones:
 
-| Criterio | MobileNetV2 | EfficientNetB0 | ResNet50V2 |
-|----------|-------------|----------------|------------|
-| Tamaño | **14 MB** | 29 MB | 98 MB |
-| Parámetros | **3.5 M** | 5.3 M | 25.6 M |
-| Top-1 ImageNet | 71.3% | 77.1% | 75.6% |
-| Velocidad CPU | **~26 ms** | ~46 ms | ~195 ms |
-| TF Lite | **Oficial, INT8** | Bueno | Parcial |
-| Edge devices | **Sí** | Marginal | No viable |
+| Criterio | MobileNetV2 | **EfficientNetB0** | ResNet50V2 |
+|----------|-------------|-------------------|------------|
+| Tamaño | 14 MB | **~20 MB (.keras) · 5.3 MB (TFLite INT8)** | 98 MB |
+| Parámetros | 3.5 M | **5.3 M** | 25.6 M |
+| Top-1 ImageNet | 71.3% | **77.1%** | 75.6% |
+| Val accuracy (este proyecto) | 0.8886 | **0.9062 ✓** | — |
+| TF Lite | Oficial, INT8 | **Oficial, INT8** | Parcial |
+| Edge devices | Sí | **Sí** | No viable |
 
 **Argumentos decisivos:**
 
-1. **Diseñado para edge:** Depthwise separable convolutions + inverted residuals reducen ~9× los FLOPs vs. una CNN estándar. Inferencia en tiempo real en Raspberry Pi y smartphones de gama media.
-2. **TF Lite oficial:** Google mantiene cuantización INT8 que reduce el modelo a ~4 MB sin pérdida significativa de precisión.
-3. **Validado en clase:** El notebook de referencia del docente (`context/260416_FINAL_Transferencia_de_aprendizaje_categorical.ipynb`) demuestra el patrón.
+1. **Mejor accuracy con tamaño comparable:** EfficientNetB0 logra 0.9062 vs. 0.8886 de MobileNetV2 (+1.76%), con un TFLite de 5.3 MB que cumple el KPI de ≤ 6 MB.
+2. **Compound scaling:** EfficientNet escala profundidad, anchura y resolución de forma balanceada — superior para distinguir clases visualmente similares como shirt, t-shirt y longsleeve.
+3. **Validado en clase:** El patrón de transferencia de aprendizaje sigue exactamente la metodología del notebook de referencia del docente (`include_top=False` + cabeza personalizada + Keras Functional API).
 
-### Arquitectura de la cabeza personalizada (v2)
+### Evolución del modelo
+
+| Versión | Backbone | Loss | Val acc |
+|---------|----------|------|---------|
+| v2 | MobileNetV2 | CrossEntropy | 0.8827 |
+| v3 | MobileNetV2 | CrossEntropy + class weights | 0.8886 |
+| v4 | MobileNetV2 | Focal Loss + class weights | 0.8886 |
+| **v5.2** | **EfficientNetB0** | **CrossEntropy + class weights** | **0.9062 ✓** |
+
+### Arquitectura de la cabeza personalizada (v5.2)
 
 ```
-MobileNetV2 (preentrenada ImageNet, 154 capas, 3.5M params)
+EfficientNetB0 (preentrenada ImageNet, 238 capas, ~4M params)
     ↓ include_top=False · weights='imagenet'
 GlobalAveragePooling2D    (7×7×1280 → 1280 features)
     ↓
 Dense(512, relu)
     ↓
-Dropout(0.3)              (regularización)
+Dropout(0.4)              (regularización)
     ↓
 Dense(10, softmax)        (10 clases del proyecto)
 ```
 
-**Estrategia de entrenamiento en dos fases:**
+**Estrategia de entrenamiento (Phase A únicamente):**
 
-| Fase | Descripción | Capas entrenables | LR | Épocas |
-|------|-------------|-------------------|----|----|
-| **A — Feature extraction** | Base congelada, solo cabeza | ~655K (cabeza) | 1e-3 | hasta 25 (EarlyStopping) |
-| **B — Fine-tuning** | Últimas 54 capas de MobileNetV2 descongeladas | ~2M | 1e-5 | hasta 20 (EarlyStopping) |
+| Fase | Descripción | LR | Épocas | Val acc |
+|------|-------------|----|----|---------|
+| **A — Feature extraction** | Base congelada, solo cabeza | 1e-3 | hasta 40 (EarlyStopping) | **0.9062 ✓** |
 
-**Optimizador:** Adam (más estable que SGD para transfer learning).
-**Loss:** `categorical_crossentropy` con One-Hot Encoding.
-**Regularización:** `class_weight='balanced'` + `Dropout(0.3)` + `EarlyStopping(patience=6)` + `ReduceLROnPlateau`.
+> Phase B (fine-tuning) se descartó: EfficientNetB0 es más sensible al fine-tuning y degradó el modelo de 0.9062 → 0.8739. Phase A ya supera el KPI.
+
+**Optimizador:** Adam lr=1e-3.
+**Loss:** `categorical_crossentropy` con class weights ajustados.
+**Class weights:** `balanced` + longsleeve×1.5 + outwear×1.5 + shirt×2.5.
+**Callbacks:** EarlyStopping (patience=10, min_delta=0.001), ReduceLROnPlateau, ModelCheckpoint.
 
 ---
 
@@ -111,21 +123,22 @@ Dense(10, softmax)        (10 clases del proyecto)
 
 **Clases (orden alfabético):** dress, hat, longsleeve, outwear, pants, shirt, shoes, shorts, skirt, t-shirt.
 
-**Augmentación validada para este dominio:**
+**Augmentación:**
 ```python
 ImageDataGenerator(
-    preprocessing_function=preprocess_input,  # MobileNetV2 → [-1, 1]
-    rotation_range=15,
-    width_shift_range=0.10,
-    height_shift_range=0.10,
-    shear_range=10.0,
-    zoom_range=0.15,
+    preprocessing_function=preprocess_input,  # EfficientNetB0 — normalización ImageNet torch
+    rotation_range=20,
+    width_shift_range=0.15,
+    height_shift_range=0.15,
+    shear_range=15.0,
+    zoom_range=0.20,
     horizontal_flip=True,
-    brightness_range=[0.85, 1.15],
+    brightness_range=[0.80, 1.20],
+    fill_mode='reflect'
 )
 ```
 
-> **Nota sobre Fashion-MNIST:** Originalmente se planteó complementar con Fashion-MNIST (70,000 imágenes grayscale 28×28), pero se descartó tras observar que el desfase de dominio (grayscale 28×28 → RGB 224×224) introducía ruido que degradaba el clasificador en fotos reales. Se decidió enfocar el entrenamiento exclusivamente en Clothing Dataset Small con augmentación robusta.
+> **Nota sobre Fashion-MNIST:** Se descartó como complemento — el desfase de dominio (grayscale 28×28 → RGB 224×224) introdujo ruido que degradaba el clasificador en fotos reales.
 
 **Privacidad y ética:** Solo se procesan imágenes de prendas inanimadas. No hay datos biométricos ni rostros. El modelo opera offline en el dispositivo final (sin envío a servidores externos).
 
@@ -143,16 +156,16 @@ RapidReliefAI/
 │   └── config.toml                        # Config de tema para Streamlit Cloud
 ├── .gitignore                             # Excluye modelos pesados y datasets
 ├── notebooks/
-│   ├── 00_setup_verificacion.ipynb        # Verifica entorno y rutas
+│   ├── 00_setup_verificacion.ipynb        # Verifica entorno, GPU y rutas
 │   ├── 01_eda_preprocesamiento.ipynb      # Análisis exploratorio + generadores
-│   └── 02_transfer_learning.ipynb         # Entrenamiento Phase A + B + export TFLite
+│   └── 02_transfer_learning.ipynb         # Entrenamiento Phase A + export TFLite
 ├── model/                                 # Modelos descargados (no se sube a Git)
-│   └── INSTRUCCIONES.md                   # Cómo colocar el .h5 entrenado
+│   └── INSTRUCCIONES.md                   # Cómo colocar el modelo entrenado
 └── context/
     ├── brief.md                           # Brief original del proyecto
     ├── intro.md                           # Introducción y justificación social
     ├── referent.md                        # Notebook de referencia del docente
-    └── 260416_FINAL_*.ipynb               # Notebook de clase (Xception)
+    └── 260416_FINAL_*.ipynb               # Notebook de clase (referencia metodológica)
 ```
 
 ---
@@ -175,8 +188,7 @@ RapidReliefAI/
    │       ├── train/        (10 carpetas, una por clase)
    │       ├── validation/   (10 carpetas, una por clase)
    │       └── test/         (10 carpetas, una por clase)
-   ├── Models/               (vacío al inicio, se llena al entrenar)
-   └── Logs/                 (opcional, para TensorBoard)
+   └── Models/               (vacío al inicio, se llena al entrenar)
    ```
 2. Descargar el dataset desde Kaggle ([Clothing Dataset Small](https://www.kaggle.com/datasets/abdelrahmansoltan98/clothing-dataset-small)) y subirlo a la carpeta `Datasets/clothing_small/`.
 
@@ -186,14 +198,13 @@ RapidReliefAI/
    - **Archivo → Abrir cuaderno → GitHub** → pegar `FernandoAcunaMtz/RapidReliefAI`
 2. Activar GPU: **Entorno de ejecución → Cambiar tipo de entorno → T4 GPU**
 3. Ejecutar en orden:
-   - `00_setup_verificacion.ipynb` — verifica que GPU, Drive y rutas funcionen
+   - `00_setup_verificacion.ipynb` — verifica GPU, Drive y rutas
    - `01_eda_preprocesamiento.ipynb` — análisis y validación de generadores
-   - `02_transfer_learning.ipynb` — entrenamiento (Phase A + Phase B) y export
+   - `02_transfer_learning.ipynb` — entrenamiento Phase A y export
 4. Al final del notebook 02 se generan en `MyDrive/RapidReliefAI/Models/`:
-   - `rapidrelief_phaseA_best.keras`
-   - `rapidrelief_phaseB_best.keras`
-   - `rapidrelief_mobilenetv2_v2.keras`
-   - `rapidrelief_model.tflite` (cuantizado INT8)
+   - `rapidrelief_phaseA_best.keras` (mejor checkpoint Phase A)
+   - `rapidrelief_efficientnetb0_v5.keras` (modelo final)
+   - `rapidrelief_model.tflite` (cuantizado INT8, 5.3 MB)
    - `labels.txt`
 
 ### 6.4 App Streamlit (local)
@@ -206,8 +217,8 @@ streamlit run app.py
 ```
 
 La app funciona en **modo demo** sin modelo. Para usar predicciones reales:
-1. Descargar el `.h5` o `.keras` entrenado desde Drive
-2. Colocarlo en `model/clothing_classifier.h5`
+1. Descargar `rapidrelief_efficientnetb0_v5.keras` desde Drive
+2. Colocarlo en `model/rapidrelief_efficientnetb0_v5.keras`
 3. Reiniciar la app
 
 ### 6.5 App Streamlit Cloud (online)
@@ -222,33 +233,35 @@ La app está desplegada en [rapidreliefai.streamlit.app](https://rapidreliefai.s
 
 El notebook `02_transfer_learning.ipynb` genera automáticamente:
 - Curvas de exactitud y pérdida (train vs. validación) para Phase A
-- Curvas de exactitud y pérdida para Phase B (fine-tuning)
 - Línea de referencia del KPI de 90% en la curva de accuracy
 
-### 7.2 Evaluación final
-
-- Matriz de confusión 10×10 (Seaborn heatmap) para identificar solapamientos
-- Reporte de clasificación con precision, recall y F1-score por clase
-- Comparación de accuracy en test vs. validation
-
-### 7.3 Resultados v1 (sin Phase B, con arquitectura suboptimal)
+### 7.2 Evaluación final (v5.2 — EfficientNetB0)
 
 | Métrica | Valor |
 |---------|-------|
-| Train accuracy | 98.27% |
-| Val accuracy máx | 88.27% |
-| Test accuracy | 89% |
-| F1-score macro | 0.86 |
-| Brecha train-val | 10% (overfitting) |
+| Val accuracy (Phase A best) | **0.9062 ✓** |
+| Test accuracy sin TTA | 0.8978 |
+| Test accuracy con TTA | **0.9059 ✓** |
+| F1-score macro | **0.90 ✓** |
+| Brecha train-val | 0.0528 |
+| Tamaño TFLite INT8 | **5.3 MB ✓** |
 
-**Diagnóstico que motivó v2:**
-- `Flatten` post-MobileNetV2 → 128M parámetros → overfitting
-- `Dense(16, sigmoid)` antes de softmax → activación incorrecta para multi-clase
-- SGD sin momentum → convergencia lenta
-- Sin fine-tuning de la base
-- Sin compensación de desbalance de clases
+### 7.3 Resultados por clase
 
-**v2 (notebook actual)** corrige los 5 problemas. Resultados pendientes del próximo entrenamiento en Colab.
+| Clase | Precision | Recall | F1 |
+|-------|-----------|--------|----|
+| dress | 0.94 | 1.00 | **0.97** |
+| hat | 0.92 | 0.92 | 0.92 |
+| longsleeve | 0.86 | 0.82 | 0.84 |
+| outwear | 0.97 | 0.82 | 0.89 |
+| pants | 0.98 | 0.98 | **0.98** |
+| shirt | 0.57 | 0.81 | 0.67 |
+| shoes | 1.00 | 0.97 | **0.99** |
+| shorts | 0.93 | 0.90 | 0.92 |
+| skirt | 0.86 | 1.00 | 0.92 |
+| t-shirt | 0.92 | 0.88 | 0.90 |
+
+> **Shirt (F1=0.67)** es el punto débil — alta confusión con longsleeve y t-shirt por similitud visual. Recall 0.81 indica que el modelo detecta bien la clase; precision 0.57 refleja falsos positivos de clases adyacentes.
 
 ---
 
@@ -256,8 +269,7 @@ El notebook `02_transfer_learning.ipynb` genera automáticamente:
 
 ### Entrenamiento (Colab)
 ```
-tensorflow >= 2.15
-keras 3.x (TF_USE_LEGACY_KERAS=1 para compatibilidad con notebook de clase)
+tensorflow >= 2.15  (TF_USE_LEGACY_KERAS=1)
 numpy, pandas, matplotlib, seaborn, scikit-learn, Pillow
 ```
 
@@ -278,26 +290,26 @@ Flutter + tflite_flutter ^0.10.4
 ## 9. Alineación con criterios académicos
 
 ### Criterio 1 — Acceso a base de datos y repositorios
-- **Base de datos propia:** Google Drive (`MyDrive/RapidReliefAI/`) con datasets y modelos versionados por timestamp en checkpoints
+- **Base de datos propia:** Google Drive (`MyDrive/RapidReliefAI/`) con datasets y modelos versionados por checkpoint
 - **Repositorio público:** [GitHub](https://github.com/FernandoAcunaMtz/RapidReliefAI) con código completo, notebooks y app
-- **Reproducibilidad:** Sección 6 documenta cómo replicar el proyecto desde cero en otra máquina, tanto en Colab (cloud) como localmente
+- **Reproducibilidad:** Sección 6 documenta cómo replicar el proyecto desde cero en Colab y localmente
 
 ### Criterio 2 — Frameworks autorizados y contexto local
-- **Frameworks autorizados:** TensorFlow/Keras (oficial Google), Jupyter (Project Jupyter), Streamlit (open source)
-- **Modificación de tercero:** MobileNetV2 preentrenada por Google sobre ImageNet (14M imágenes, 1,000 clases) → adaptada a 10 clases del proyecto mediante transfer learning + fine-tuning
+- **Frameworks autorizados:** TensorFlow/Keras (oficial Google), Jupyter, Streamlit (open source)
+- **Modificación de tercero:** EfficientNetB0 preentrenada por Google sobre ImageNet → adaptada a 10 clases del proyecto mediante transfer learning (mismo patrón del notebook de clase del Dr. Bastián)
 - **Contexto local justificado:** Crisis humanitarias y desastres naturales generan colapso logístico en centros de acopio. Esta solución reduce ~70% el tiempo de clasificación manual y opera offline en zonas sin conectividad
 
 ### Criterio 3 — Funcionamiento del sistema
-- **Gráficas de desempeño:** Notebook 02 genera curvas de accuracy/loss (Phase A + B), matriz de confusión 10×10 y reporte por clase con precision/recall/F1
-- **Coherencia con justificación:** El KPI de 90% se monitorea en cada época con visualización; el modelo se exporta a TFLite para cumplir el requisito de operación offline
-- **UX del prototipo:** App Streamlit con dos modos de entrada (upload + cámara built-in), feedback visual con barra de confianza, historial de sesión, modo demo funcional sin modelo. Responsiva en móvil y desktop
+- **Gráficas de desempeño:** Notebook 02 genera curvas accuracy/loss (Phase A), matriz de confusión 10×10 y reporte por clase con precision/recall/F1
+- **Coherencia con justificación:** El KPI de 90% se monitorea en cada época con visualización; el modelo se exporta a TFLite (5.3 MB) para cumplir el requisito offline
+- **UX del prototipo:** App Streamlit con upload + cámara, barra de confianza, historial de sesión, modo demo funcional. Responsiva en móvil y desktop
 
 ---
 
 ## 10. Referencias
 
+- Tan, M. & Le, Q. V. (2019). *EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks.* [arXiv:1905.11946](https://arxiv.org/abs/1905.11946)
 - Sandler, M. et al. (2018). *MobileNetV2: Inverted Residuals and Linear Bottlenecks.* [arXiv:1801.04381](https://arxiv.org/abs/1801.04381)
-- Howard, A. et al. (2019). *Searching for MobileNetV3.* [arXiv:1905.02244](https://arxiv.org/abs/1905.02244)
 - Chollet, F. (2021). *Deep Learning with Python* (2nd ed.). Manning.
 - Goodfellow, I., Bengio, Y. & Courville, A. (2016). *Deep Learning.* MIT Press.
 - Programa Mundial de Alimentos (2021). *Inteligencia Artificial para la Acción Humanitaria.*
@@ -305,4 +317,4 @@ Flutter + tflite_flutter ^0.10.4
 
 ---
 
-*Última actualización: 2026-04-28*
+*Última actualización: 2026-04-29*
