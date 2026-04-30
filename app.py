@@ -699,10 +699,7 @@ def load_model():
 # ─── Preprocesamiento ─────────────────────────────────────────────────────────
 def preprocess(img: Image.Image) -> np.ndarray:
     img = img.convert("RGB").resize(IMAGE_SIZE, Image.BICUBIC)
-    x = np.array(img, dtype=np.float32) / 255.0
-    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-    std  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-    x = (x - mean) / std
+    x = np.array(img, dtype=np.float32)  # raw [0-255]; EfficientNetB0 normalizes internally
     return np.expand_dims(x, 0)
 
 
