@@ -988,10 +988,10 @@ with tab_cls:
     # Stats
     st.markdown("""
 <div class="stat-grid">
-  <div class="stat"><div class="stat-num">10</div><div class="stat-lbl">Categorías</div></div>
-  <div class="stat"><div class="stat-num">≥ 90%</div><div class="stat-lbl">Precisión objetivo</div></div>
-  <div class="stat"><div class="stat-num">&lt; 300ms</div><div class="stat-lbl">Latencia</div></div>
-  <div class="stat"><div class="stat-num">Offline</div><div class="stat-lbl">Modo final</div></div>
+  <div class="stat"><div class="stat-num">90.6%</div><div class="stat-lbl">Val accuracy ✓</div></div>
+  <div class="stat"><div class="stat-num">0.90</div><div class="stat-lbl">F1-score macro ✓</div></div>
+  <div class="stat"><div class="stat-num">5.3 MB</div><div class="stat-lbl">TFLite INT8 ✓</div></div>
+  <div class="stat"><div class="stat-num">Offline</div><div class="stat-lbl">Flutter · campo</div></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1038,12 +1038,12 @@ lento, agotador y propenso a errores — limitando la velocidad de distribución
     with col_r:
         st.markdown('<div class="section-label">KPIs del Proyecto</div>', unsafe_allow_html=True)
         kpis = [
-            ("Precisión (val_accuracy)",     "≥ 90%"),
-            ("F1-Score por clase",            "≥ 0.88"),
-            ("Latencia de inferencia",        "≤ 300 ms"),
-            ("Tamaño modelo TFLite",          "≤ 6 MB"),
-            ("Funcionalidad offline",         "100%"),
-            ("Reducción vs. clasificación manual", "70%"),
+            ("Val accuracy (Phase A)",        "0.9062 ✓  meta ≥ 90%"),
+            ("Test accuracy con TTA",         "0.9059 ✓  meta ≥ 90%"),
+            ("F1-score macro",                "0.90 ✓  meta ≥ 0.88"),
+            ("Tamaño TFLite INT8",            "5.3 MB ✓  meta ≤ 6 MB"),
+            ("Latencia de inferencia",        "< 300 ms ✓"),
+            ("Funcionalidad offline",         "100% ✓  Flutter + TFLite"),
         ]
         for k, v in kpis:
             st.markdown(
@@ -1119,13 +1119,13 @@ Augmentación robusta para compensar el tamaño moderado del dataset
     with col_r:
         st.markdown('<div class="section-label">Stack Tecnológico</div>', unsafe_allow_html=True)
         tech = [
-            ("Python",            "3.13"),
-            ("TensorFlow",        "2.21"),
-            ("Keras",             "3.x"),
-            ("NumPy",             "2.x"),
-            ("Pillow",            "11.x"),
-            ("Streamlit",         "1.56 · esta app"),
-            ("Flutter + TFLite",  "Deploy final"),
+            ("Python",            "3.11+"),
+            ("TensorFlow",        "≥ 2.15"),
+            ("tf_keras",          "legacy Keras · modelo guardado"),
+            ("EfficientNetB0",    "ImageNet · 5.3 M params"),
+            ("NumPy",             "< 2.0"),
+            ("Streamlit",         "≥ 1.32 · esta app"),
+            ("Flutter + TFLite",  "deploy offline final"),
         ]
         for name, ver in tech:
             st.markdown(
@@ -1136,29 +1136,27 @@ Augmentación robusta para compensar el tamaño moderado del dataset
                 unsafe_allow_html=True
             )
 
-        st.markdown('<div class="section-label">Referencia de Rendimiento</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">Evolución del Modelo</div>', unsafe_allow_html=True)
         st.markdown("""
-Benchmark del notebook de referencia (Xception, Clothing Dataset Small):
+| Versión | Backbone | Val acc |
+|---------|----------|---------|
+| v2 | MobileNetV2 | 88.27% |
+| v3 | MobileNetV2 + class weights | 88.86% |
+| v4 | MobileNetV2 + Focal Loss | 88.86% |
+| **v5.2** | **EfficientNetB0** | **90.62% ✓** |
 
-| Config | Val Acc |
-|--------|---------|
-| LR=0.01, sin dropout | 82.7% |
-| LR=0.001, dropout=0.2 | 84.8% |
-| Con augmentación | 84.5% |
-| Xception 299×299 | **88.3%** |
-
-MobileNetV2 + fine-tuning apunta a superar ese baseline.
+**Clase más difícil:** shirt (F1=0.67) — confusión con longsleeve y t-shirt por similitud visual.
 """)
 
         st.markdown('<div class="section-label">Flujo de Deployment</div>', unsafe_allow_html=True)
         st.markdown("""
 ```
-Colab (GPU T4) → model.h5
+Colab (GPU T4) → rapidrelief_efficientnetb0_v5.keras
   → TFLiteConverter + INT8
-  → model.tflite (~4 MB)
-  → Flutter app (offline)
+  → rapidrelief_model.tflite (5.3 MB)
+  → Flutter app (offline en campo)
 ```
-Esta app web: Streamlit Cloud · validación durante desarrollo.
+Esta app web: Streamlit Cloud · validación y demo del proyecto.
 """)
 
 
